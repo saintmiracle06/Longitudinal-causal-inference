@@ -78,12 +78,12 @@ predict.glmnet3 <- function(object, newx) {
   as.vector(predict(object$fit, X, type = "response")[, 1])
 }
 
-ATE1<-rep(NA,200)
-ATE2<-rep(NA,200)
+ATE1<-rep(NA,500)
+ATE2<-rep(NA,500)
 
 ## MC simulation
-for (i in 1:200){
-id<-3000
+for (i in 1:500){
+id<-1000
 #number of visits (K+1)
 n_obs<-3
 
@@ -222,6 +222,7 @@ dat2$y_2 <- predict.glmnet3(model2, dat2)
 #ATE2[i]<- mean(dat1[which(dat1$z==1),]$y_2)-mean(dat1[which(dat1$z==0),]$y_2)
 ATE2[i]<- mean(dat2[dat2$time==1,]$y_2)
 }
+
 hist(ATE1, xlim=c(2.5, 4))
 abline(v=3.514948, col='red', lwd=3, lty='dashed')
 
