@@ -27,6 +27,7 @@ library(dplyr)
 library(SuperLearner)
 library(truncnorm)
 library(data.table)
+library(simcausal)
 
 
 ## simulation study:
@@ -80,7 +81,7 @@ predict.glmnet3 <- function(object, newx) {
 
 ATE1<-rep(NA,500)
 ATE2<-rep(NA,500)
-
+ATE3<-rep(NA,500)
 ## MC simulation
 for (i in 1:500){
 id<-1000
@@ -94,30 +95,32 @@ h<-matrix(nrow=id,ncol=n_obs)
 l<-matrix(nrow=id,ncol=n_obs)
 
 z<-matrix(nrow=id,ncol=n_obs)
-y<-matrix(nrow=id,ncol=n_obs)
+d<-matrix(nrow=id,ncol=n_obs)
 
+y<-matrix(nrow=id,ncol=n_obs)
 expit<-function(x){exp(x)/(1+exp(x))}
 
 # Baseline
 #random error u
-u<-rnorm(id,0,0.1)
 ## Baselin variable l_0
-l_0 <- rbinom(id,1,expit(1.5+u))
+l_0 <- rbinom(id,1,expit(1.5+rnorm(id,0,0.1)))
 #h[,1]<-rnorm(id,0+u,1)
-l[,1]<-rbinom(id,1,expit(1+u))
-h[,1]<-rbinom(id,1,expit(0.5+u))
+l[,1]<-rbinom(id,1,expit(1+rnorm(id,0,0.1)))
+h[,1]<-rbinom(id,1,expit(0.5+rnorm(id,0,0.1)))
 
 ## function D for z  
-z[,1] <-rbinom(id,1,expit(0.8+u))
-y[,1]<-rnorm(id,1+u+l_0+z[,1]+h[,1]+l[,1],1)
+z[,1] <-rbinom(id,1,expit(0.8+rnorm(id,0,0.1)))
+d[,1] <-rbinom(id,1,0.5*z[,1])
+y[,1]<-rnorm(id,1+rnorm(id,0,0.1)+l_0+z[,1]+h[,1]+l[,1],1)
 
 # Time-varying variables
 for(k in 2:n_obs){
   #h[,k]=rnorm(id,0.8*h[,k-1]-z[,k-1]+0.1*(k-1)+u,1)
-  h[,k]=rbinom(id,1,expit(-1+0.5*h[,k-1]+0.1*(k-1)+u))
-  l[,k]=rbinom(id,1,expit(-1+0.4*l[,k-1]+0.2*(k-1)+u))
+  h[,k]=rbinom(id,1,expit(-1+0.5*h[,k-1]+0.1*(k-1)+rnorm(id,0,0.1)))
+  l[,k]=rbinom(id,1,expit(-1+0.4*l[,k-1]+0.2*(k-1)+rnorm(id,0,0.1)))
   z[,k]=rbinom(id,1,expit(-1+0.5*h[,k]+z[,k-1]))
-  y[,k]=rnorm(id,0.9*h[,k]-0.8*h[,k-1]-0.2*l[,k]+0.2*l[,k-1]+1.2*z[,k]-z[,k-1]+u+l_0,1)
+  d[,k]=rbinom(id,1,0.5*z[,k])
+  y[,k]=rnorm(id,0.9*h[,k]-0.8*h[,k-1]-0.2*l[,k]+0.2*l[,k-1]+1.2*z[,k]-z[,k-1]+rnorm(id,0,0.1)+l_0,1)
 }
 
 ## Wide to long transformation
@@ -129,6 +132,9 @@ names(l.dat)=paste0("l.",0:2)
 
 z.dat=as.data.frame(z)
 names(z.dat)=paste0("z.",0:2)
+
+d.dat=as.data.frame(d)
+names(d.dat)=paste0("d.",0:2)
 
 y.dat=as.data.frame(y)
 names(y.dat)=paste0("y.",0:2)
@@ -150,13 +156,14 @@ llag2.dat=as.data.frame(cbind(rep(0,id),rep(0,id),l.dat[,1]))
 names(llag1.dat)=paste0("llag1.",0:2)
 names(llag2.dat)=paste0("llag2.",0:2)
 
-dat<-data.frame(id=1:id,h.dat,z.dat,l.dat, zlag1.dat,zlag2.dat,hlag1.dat,hlag2.dat,llag1.dat,llag2.dat,y.dat,u,l_0)
+dat<-data.frame(id=1:id,h.dat,z.dat,d.dat, l.dat, zlag1.dat,zlag2.dat,hlag1.dat,hlag2.dat,llag1.dat,llag2.dat,y.dat,l_0)
 #dat<-data.frame(id=1:id,h.dat,z.dat,y.dat,u)
 #dat<-data.frame(id=1:id,h.dat,z.dat,zlag1.dat,zlag2.dat,hlag1.dat,hlag2.dat,y.dat,u)
 
 #dat.long<-reshape(data = dat,varying=c(paste0("z.",0:2),paste0("h.",0:2),
 #                                       paste0("y.",0:2)),direction="long",idvar="id")
-dat.long<-reshape(data = dat,varying=c(paste0("h.",0:2),paste0("z.",0:2),paste0("l.",0:2), paste0("zlag1.",0:2),
+dat.long<-reshape(data = dat,varying=c(paste0("h.",0:2),paste0("z.",0:2), paste0("d.",0:2),
+                                       paste0("l.",0:2), paste0("zlag1.",0:2),
                                        paste0("zlag2.",0:2),paste0("hlag1.",0:2),paste0("hlag2.",0:2),
                                        paste0("llag1.",0:2),paste0("llag2.",0:2),
                                        paste0("y.",0:2)),direction="long",idvar="id")
@@ -170,17 +177,14 @@ dat.long$y_0<-ifelse(dat.long$r==1, dat.long$y, NA)
 ## ATE estimators
 ##colnames(dat.long)
 
-my_vars = c("time","z","h","l","zlag1", "zlag2", "hlag1", "hlag2", "llag1", "llag2","u","l_0")
+my_vars = c("time","z","h","l","zlag1", "zlag2", "hlag1", "hlag2", "llag1", "llag2","l_0")
 y = dat.long[dat.long$r ==1,]$y_0
 X = subset(dat.long[dat.long$r ==1,], select = my_vars)
 ## fit specified model
 model1<-glmnet3(X, y, family ="gaussian", id = dat.long[dat.long$r ==1,]$id)
 ## predict on specified dataset where d is specified by user
-## d function z
-d <-rbinom(id,1,0.5*dat.long$z)
-## d applied to z
 dat.long_1<-dat.long
-dat.long_1$z <-d
+dat.long_1$z <-d[,1]
 ## Treatment effect is d 
 dat.long_1$y_1 <- predict.glmnet3(model1, dat.long_1)
 ATE1[i]<-mean(dat.long_1[dat.long_1$time==0,]$y_1)
@@ -200,7 +204,7 @@ dat.long_1$z<-dat.long$z
 dat1<-dat.long_1[which(dat.long_1$time>0),]
 
 ## limited to z_(s-k), h_(s-k)
-my_vars2 = c("time","zlag1", "zlag2", "hlag1", "hlag2", "llag1", "llag2","u","l_0")
+my_vars2 = c("time","zlag1", "zlag2", "hlag1", "hlag2", "llag1", "llag2","l_0")
 y = dat1$y_1
 X = subset(dat1, select = my_vars2)
 model2<-glmnet3(X, y, family ="gaussian", id = dat1$id)
@@ -211,23 +215,24 @@ model2<-glmnet3(X, y, family ="gaussian", id = dat1$id)
 #               h*time + h*zlag1 + h*zlag2 + h*l + h*llag1 + h*llag2 + 
 #               zlag1*time + hlag1*time + llag1*time + llag1*time, data = dat1)
 # summary(reg_1)
-## d function z
-## d applied to z
-d <-rbinom(id,1,0.5*dat1$z)
-## d applied to z
 dat2<-dat1
-dat2$z <-d
+dat2$z <-d[,2]
 dat2$y_2 <- predict.glmnet3(model2, dat2)
 # dat1$y_2 <- predict(reg_1, newdata = dat1)
 #ATE2[i]<- mean(dat1[which(dat1$z==1),]$y_2)-mean(dat1[which(dat1$z==0),]$y_2)
 ATE2[i]<- mean(dat2[dat2$time==1,]$y_2)
+print(i)
 }
 
+A1<-ATE1[complete.cases(ATE1)]
+A2<-na.omit(ATE2)
+
+
 hist(ATE1, xlim=c(2.5, 4))
-abline(v=3.514948, col='red', lwd=3, lty='dashed')
+abline(v=3.516358, col='red', lwd=3, lty='dashed')
 
 hist(ATE2, xlim=c(0, 2))
-abline(v=0.6406066, col='red', lwd=3, lty='dashed')
+abline(v=4.019579, col='red', lwd=3, lty='dashed')
 
 ## automatically generate lag function k is number of lags
 k=2
