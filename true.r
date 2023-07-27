@@ -53,19 +53,3 @@ library(matrixStats)
 we <- rowProds(weights)
 true <- mean(dat$Y_3* we)
 
-## policy <- function(data, trt) {
-##   a <- data[trt]
-##   (a - 0.1) * (a - 0.9 > 0) + a * (a - 0.9 < 0)
-## }
-
-policy <- function(data, trt) {
-  a <- data[trt]
-  (a - 0.1) * (a > 0.9) + a * (a <= 0.9)
-}
-
-## counterfactual values
-A<-c("z_0","z_1","z_2","z_3")
-d<-policy(dat,A)
-z_matrix<-dat[A]
-## IPTW (true values)
-Y3<-mean(mean(d$z_0)/mean(z_matrix$z_0)*mean(d$z_1)/mean(z_matrix$z_1)*mean(d$z_2)/mean(z_matrix$z_2)*mean(d$z_2)/mean(z_matrix$z_2)*dat$Y_3)
